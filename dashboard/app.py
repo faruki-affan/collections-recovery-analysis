@@ -1,4 +1,4 @@
-"""One-screen CEO dashboard. Run: streamlit run dashboard/app.py"""
+"""Interactive CEO dashboard. Run: streamlit run dashboard/app.py"""
 from __future__ import annotations
 
 import json
@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -13,91 +14,337 @@ ROOT = Path(__file__).resolve().parents[1]
 GOLDEN = ROOT / "data" / "golden"
 sys.path.insert(0, str(ROOT / "src"))
 
-st.set_page_config(page_title="Collections CEO dashboard", layout="wide")
+st.set_page_config(
+    page_title="Collections CEO dashboard",
+    page_icon="₹",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-if not (GOLDEN / "metrics_monthly.parquet").exists():
-    st.error("Golden metrics missing. Run `python scripts/run_pipeline.py` from the repo root.")
+st.markdown(
+    """
+    <style>
+      .block-container { padding-top: 1.2rem; padding-bottom: 1.5rem; }
+      div[data-testid="stMetricValue"] { font-size: 1.35rem; }
+      .story { font-size: 1.05rem; line-height: 1.45; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+@st.cache_data
+def load() -> dict:
+    if not (GOLDEN / "metrics_monthly.parquet").exists():
+        return {}
+    monthly = pd.read_parquet(GOLDEN / "metrics_monthly.parquet").sort_values("month_ist")
+    monthly["label"] = monthly["month_ist"].map(
+        lambda m: {"2026-08": "2026-08 (8 days)"}.get(m, m)
+    )
+    pay = pd.read_parquet(GOLDEN / "fact_payment.parquet")
+    attr = pd.read_parquet(GOLDEN / "metrics_channel_attribution.parquet")
+    attr["channel"] = attr["channel"].fillna("No prior interaction")
+    return {
+        "monthly": monthly,
+        "claim": json.loads((GOLDEN / "claim_reconciliation.json").read_text(encoding="utf-8")),
+        "drivers": pd.read_parquet(GOLDEN / "metrics_drivers_snapshot.parquet"),
+        "attr": attr,
+        "success_window": float(pay.loc[pay["is_success"], "amount"].sum()),
+    }
+
+
+def cr(amount: float) -> str:
+    return f"₹{amount / 1e7:,.2f} Cr"
+
+
+def pct(x: float) -> str:
+    sign = "+" if x >= 0 else ""
+    return f"{sign}{x * 100:.2f}%"
+
+
+def mom(a: float, b: float) -> float:
+    if a == 0:
+        return float("nan")
+    return b / a - 1
+
+
+data = load()
+if not data:
+    st.error("Golden metrics missing. From the repo root run: `python scripts/run_pipeline.py`")
     st.stop()
 
-monthly = pd.read_parquet(GOLDEN / "metrics_monthly.parquet")
-claim = json.loads((GOLDEN / "claim_reconciliation.json").read_text(encoding="utf-8"))
-drivers = pd.read_parquet(GOLDEN / "metrics_drivers_snapshot.parquet")
-pay = pd.read_parquet(GOLDEN / "fact_payment.parquet")
+monthly: pd.DataFrame = data["monthly"]
+claim = data["claim"]
+months = [m for m in monthly["month_ist"].tolist() if m != "2026-08"]
 
-complete = monthly[monthly["month_ist"] != "2026-08"].copy()
-last = complete.iloc[-1]
-prev = complete.iloc[-2]
-success = float(pay.loc[pay["is_success"], "amount"].sum())
+# ----- sidebar -----
+with st.sidebar:
+    st.header("Play the numbers")
+    st.caption("Only controls the data can support.")
 
-st.markdown("### Collections — CEO view (60 seconds)")
-st.caption("Window 1 Jan–8 Aug 2026 · SUCCESS ₹ after payment_id dedupe · IST calendar · closed book 30,000 accounts")
-
-warn = (
-    f"**Data-quality:** raw SUCCESS is inflated by ~1.9% duplicate payment_ids. "
-    f"Borrower/agent masters are not usable as people. Snapshot account status matches history 12%. "
-    f"The 11% MoM claim is Feb→Mar total ₹ (+{claim['total_rupees_mom_feb_mar']*100:.1f}%) vs per-day +{claim['per_day_mom_feb_mar']*100:.2f}%."
-)
-st.warning(warn)
-
-c1, c2, c3, c4, c5, c6 = st.columns(6)
-c1.metric("Recovery (window)", f"₹{success/1e7:.1f} Cr")
-c2.metric(
-    "Reported MoM (Feb→Mar ₹)",
-    f"{claim['total_rupees_mom_feb_mar']*100:.1f}%",
-    delta="calendar, not ops",
-)
-c3.metric("Independent MoM (₹/day)", f"{claim['per_day_mom_feb_mar']*100:.2f}%")
-c4.metric("Recovery / account (Jul)", f"₹{last['recovery_per_account']:,.0f}")
-c5.metric("RPC (Jul)", f"{last['rpc_among_answered']*100:.1f}%")
-c6.metric("PTP kept (Jul)", f"{last['ptp_kept_rate']*100:.1f}%")
-
-left, right = st.columns((2, 1))
-with left:
-    fig = go.Figure()
-    fig.add_bar(x=monthly["month_ist"], y=monthly["recovery_amount"] / 1e7, name="Total ₹ Cr")
-    fig.add_scatter(
-        x=monthly["month_ist"],
-        y=monthly["recovery_per_day"] / 1e7,
-        name="₹ Cr / day",
-        yaxis="y2",
-        mode="lines+markers",
+    st.subheader("Months")
+    preset = st.radio(
+        "Jump to a comparison",
+        ["Reported claim (Feb → Mar)", "Pick any two complete months"],
+        help="The business claim is Feb→Mar total rupees. August is excluded (8 days only).",
     )
-    fig.update_layout(
-        title="Recovery: totals (can fake MoM) vs per day (operational)",
-        yaxis_title="₹ Cr in month",
-        yaxis2=dict(title="₹ Cr per day", overlaying="y", side="right"),
-        legend=dict(orientation="h"),
-        height=340,
-        margin=dict(l=40, r=40, t=50, b=40),
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    if preset.startswith("Reported"):
+        m0, m1 = "2026-02", "2026-03"
+        st.success("Locked to February vs March — the pair behind the 11% claim.")
+    else:
+        c_a, c_b = st.columns(2)
+        m0 = c_a.selectbox("From", months, index=months.index("2026-02"))
+        m1 = c_b.selectbox("To", months, index=months.index("2026-03"))
 
-with right:
-    st.markdown("**11% claim reconciliation**")
+    st.subheader("Chart")
+    series = st.multiselect(
+        "Show",
+        ["Total ₹ (can mislead)", "₹ per day (fairer)"],
+        default=["Total ₹ (can mislead)", "₹ per day (fairer)"],
+        help="Total rupees rise in longer months. Per-day is the operational series.",
+    )
+    if not series:
+        series = ["₹ per day (fairer)"]
+
+    st.subheader("Groups")
+    driver = st.selectbox(
+        "Compare",
+        ["risk_segment", "loan_type"],
+        format_func=lambda x: {"risk_segment": "Risk", "loan_type": "Product"}[x],
+        help="Snapshot status and geography are not reliable in this file, so they are not offered.",
+    )
+
+    st.divider()
+    with st.expander("What do these words mean?"):
+        st.markdown(
+            """
+- **SUCCESS ₹** — cash after dropping duplicate `payment_id`s.
+- **MoM** — the two months you selected.
+- **RPC** — answered calls / all calls.
+- **PTP kept** — KEPT promises / all PTPs.
+- **Closed book** — same 30,000 accounts every month.
+            """
+        )
+
+# ----- selected rows -----
+r0 = monthly.loc[monthly["month_ist"] == m0].iloc[0]
+r1 = monthly.loc[monthly["month_ist"] == m1].iloc[0]
+same = m0 == m1
+chart_df = monthly[monthly["month_ist"] != "2026-08"]
+
+total_mom = mom(r0["recovery_amount"], r1["recovery_amount"])
+day_mom = mom(r0["recovery_per_day"], r1["recovery_per_day"])
+acct_mom = mom(r0["n_recovered"], r1["n_recovered"])
+cal_mom = mom(r0["days"], r1["days"])
+is_claim_pair = {m0, m1} == {"2026-02", "2026-03"}
+
+# ----- header -----
+st.title("Did recovery really improve 11%?")
+st.markdown(
+    f'<p class="story">You are comparing <b>{r0["label"]}</b> ({int(r0["days"])} days) with '
+    f'<b>{r1["label"]}</b> ({int(r1["days"])} days). '
+    f'Total rupees moved <b>{pct(total_mom) if not same else "n/a"}</b>. '
+    f'Per day moved <b>{pct(day_mom) if not same else "n/a"}</b>.</p>',
+    unsafe_allow_html=True,
+)
+
+if is_claim_pair and not same:
+    st.success(
+        f"This is the reported pair. Calendar days {int(r0['days'])} → {int(r1['days'])} "
+        f"({pct(cal_mom)}). Almost all of the +11% is extra days, not better collections."
+    )
+elif same:
+    st.warning("Pick two different months to see a month-on-month change.")
+else:
+    st.info("This is not the pair in the 11% claim. Check whether totals and per-day still agree.")
+
+with st.expander("Data-quality (read once)", expanded=False):
     st.markdown(
         f"""
-| Definition | Feb→Mar |
-| --- | ---: |
-| Reported story | +11% |
-| Total SUCCESS ₹ | {claim['total_rupees_mom_feb_mar']*100:.2f}% |
-| Calendar 31/28 | {claim['calendar_ratio']*100:.2f}% |
-| ₹ per day | {claim['per_day_mom_feb_mar']*100:.2f}% |
-| Paying accounts | {claim['paying_accounts_mom_feb_mar']*100:.2f}% |
-"""
+- Raw SUCCESS is inflated ~**1.9%** by duplicate payment IDs. This dashboard uses **deduped** cash.
+- Borrower and agent files are **not** usable as people. Geography is majority-vote.
+- Account snapshot status matches history on **12%** of accounts — do not treat ACTIVE as the live book.
+- Feb→Mar total ₹ = **{pct(claim['total_rupees_mom_feb_mar'])}**; per day = **{pct(claim['per_day_mom_feb_mar'])}**.
+        """
     )
-    st.info("Verdict: true only for unadjusted total rupees February to March.")
 
-st.markdown("**Drivers (snapshot — low trust on status/geo)**")
-d1, d2, d3 = st.columns(3)
-for col, dim in zip((d1, d2, d3), ("risk_segment", "loan_type", "status")):
-    sub = drivers[drivers["driver"] == dim]
-    col.bar_chart(sub.set_index("segment")["recovery_rate"], height=180)
-    col.caption(dim + " · ever-paid rate (flat)")
+# ----- KPIs -----
+k1, k2, k3, k4, k5, k6 = st.columns(6)
+k1.metric("Window recovery", cr(data["success_window"]), help="All SUCCESS ₹ in Jan–8 Aug after payment_id dedupe.")
+k2.metric(
+    f"Total ₹  {m0[-2:]}→{m1[-2:]}",
+    "—" if same else pct(total_mom),
+    help="Unadjusted month totals. Longer months look better.",
+)
+k3.metric(
+    "₹ per day",
+    "—" if same else pct(day_mom),
+    delta="use this for ops" if not same and abs(day_mom) < abs(total_mom) else None,
+    help="Recovery divided by days in the month (August = 8).",
+)
+k4.metric(
+    f"Recovery / account ({m1})",
+    f"₹{r1['recovery_per_account']:,.0f}",
+    help="SUCCESS ₹ / 30,000 accounts in the To month.",
+)
+k5.metric(
+    f"RPC ({m1})",
+    f"{r1['rpc_among_answered']*100:.1f}%",
+    help="Answered calls / all calls.",
+)
+k6.metric(
+    f"PTP kept ({m1})",
+    f"{r1['ptp_kept_rate']*100:.1f}%",
+    help="KEPT promises / all PTP rows.",
+)
 
-st.markdown("**₹10 Cr investment**")
-i1, i2, i3, i4 = st.columns(4)
-i1.write("**Recommendation:** Better borrower targeting")
-i2.write("**Incremental recovery:** Not estimable (₹0 in-sample)")
-i3.write("**ROI / break-even:** Not estimable")
-i4.write("**Downside:** ₹10 Cr / ₹0 lift · confidence on rupees: very low")
-st.caption("Campaign names, channels, and target definitions do not match. Do not scale dialer, agents, AI, WhatsApp, or field on this extract.")
+# ----- chart + reconciliation -----
+left, right = st.columns((1.7, 1))
+with left:
+    fig = go.Figure()
+    if "Total ₹ (can mislead)" in series:
+        fig.add_bar(
+            x=chart_df["label"],
+            y=chart_df["recovery_amount"] / 1e7,
+            name="Total ₹ Cr",
+            hovertemplate="%{x}<br>Total: ₹%{y:.2f} Cr<extra></extra>",
+            marker_color=["#1F6FEB" if m in (m0, m1) else "#9ECBFF" for m in chart_df["month_ist"]],
+        )
+    if "₹ per day (fairer)" in series:
+        fig.add_scatter(
+            x=chart_df["label"],
+            y=chart_df["recovery_per_day"] / 1e7,
+            name="₹ Cr / day",
+            yaxis="y2" if "Total ₹ (can mislead)" in series else "y",
+            mode="lines+markers",
+            hovertemplate="%{x}<br>Per day: ₹%{y:.3f} Cr<extra></extra>",
+            line=dict(color="#8B1E3F", width=3),
+        )
+    layout = dict(
+        title="Highlighted bars are your two months · Jan–Jul complete months only",
+        height=390,
+        margin=dict(l=40, r=50, t=50, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        hovermode="x unified",
+        yaxis_title="₹ Cr in month" if "Total ₹ (can mislead)" in series else None,
+    )
+    if "Total ₹ (can mislead)" in series and "₹ per day (fairer)" in series:
+        layout["yaxis2"] = dict(title="₹ Cr per day", overlaying="y", side="right")
+    fig.update_layout(**layout)
+    st.plotly_chart(fig, width="stretch")
+
+with right:
+    st.subheader("Compare these two months")
+    if same:
+        st.write("Select two different months in the sidebar.")
+    else:
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "Lens": [
+                        "Total SUCCESS ₹",
+                        "₹ per calendar day",
+                        "Days in month",
+                        "Paying accounts",
+                        "RPC",
+                        "PTP kept",
+                        "₹ / agent-hour",
+                    ],
+                    m0: [
+                        cr(r0["recovery_amount"]),
+                        cr(r0["recovery_per_day"]),
+                        int(r0["days"]),
+                        f"{int(r0['n_recovered']):,}",
+                        f"{r0['rpc_among_answered']*100:.1f}%",
+                        f"{r0['ptp_kept_rate']*100:.1f}%",
+                        f"₹{r0['recovery_per_agent_hour']:,.0f}",
+                    ],
+                    m1: [
+                        cr(r1["recovery_amount"]),
+                        cr(r1["recovery_per_day"]),
+                        int(r1["days"]),
+                        f"{int(r1['n_recovered']):,}",
+                        f"{r1['rpc_among_answered']*100:.1f}%",
+                        f"{r1['ptp_kept_rate']*100:.1f}%",
+                        f"₹{r1['recovery_per_agent_hour']:,.0f}",
+                    ],
+                    "Change": [
+                        pct(total_mom),
+                        pct(day_mom),
+                        pct(cal_mom),
+                        pct(acct_mom),
+                        pct(mom(r0["rpc_among_answered"], r1["rpc_among_answered"])),
+                        pct(mom(r0["ptp_kept_rate"], r1["ptp_kept_rate"])),
+                        pct(mom(r0["recovery_per_agent_hour"], r1["recovery_per_agent_hour"])),
+                    ],
+                }
+            ),
+            hide_index=True,
+            width="stretch",
+        )
+        if abs(total_mom - day_mom) > 0.03:
+            st.caption("Totals and per-day disagree — the month lengths are doing the work, not operations.")
+        else:
+            st.caption("Totals and per-day roughly agree — this move is not mainly a calendar artifact.")
+
+# ----- drivers + channel -----
+dcol, ccol = st.columns(2)
+with dcol:
+    st.subheader("Are some borrowers easier?")
+    sub = data["drivers"][data["drivers"]["driver"] == driver].copy()
+    sub["segment"] = sub["segment"].fillna("(missing)")
+    plot = sub.copy()
+    plot["y"] = plot["recovery_rate"]
+    fig_d = px.bar(
+        plot,
+        x="segment",
+        y="y",
+        title="Ever-paid rate — groups are essentially the same",
+        labels={"segment": "", "y": "Ever-paid rate"},
+        hover_data={"n": True, "n_paid": True},
+    )
+    fig_d.update_layout(height=340, margin=dict(l=10, r=10, t=50, b=10), showlegend=False)
+    fig_d.update_yaxes(tickformat=".0%", range=[0, 0.6])
+    st.plotly_chart(fig_d, width="stretch")
+    st.caption("No investable segment lift in-sample. Status and geography are omitted because those fields are not trustworthy.")
+
+with ccol:
+    st.subheader("Last-touch is not the KPI")
+    window = "7d"
+    aw = data["attr"][data["attr"]["window"] == window].copy()
+    aw["cr"] = aw["sum"] / 1e7
+    aw["pct"] = aw["sum"] / aw["sum"].sum()
+    fig_c = px.bar(
+        aw.sort_values("pct", ascending=False),
+        x="channel",
+        y="pct",
+        title=f"Share of SUCCESS ₹ if last-touch window = {window}",
+        labels={"channel": "", "pct": "Share of cash"},
+        hover_data={"cr": ":.2f", "count": True},
+    )
+    fig_c.update_layout(height=340, margin=dict(l=10, r=10, t=50, b=10), showlegend=False)
+    fig_c.update_yaxes(tickformat=".0%")
+    st.plotly_chart(fig_c, width="stretch")
+    unexplained = aw.loc[aw["channel"] == "No prior interaction", "sum"].sum()
+    attributed = aw.loc[aw["channel"] != "No prior interaction", "sum"].sum()
+    st.caption(
+        f"At {window}: **{cr(attributed)}** has a prior interaction, **{cr(unexplained)}** does not. "
+        "Headline recovery does not last-touch for that reason."
+    )
+
+# ----- investment -----
+st.subheader("₹10 Cr recommendation")
+st.markdown(
+    "**Better borrower targeting** — campaign names, channels, and target rules do not match "
+    "(80% recommended-channel mismatch). That is the only area with a proven system failure."
+)
+a, b, c = st.columns(3)
+a.metric("Incremental recovery", "Not estimable")
+b.metric("ROI / break-even", "Not estimable")
+c.metric("Downside", "₹10 Cr / ₹0 extra cash")
+st.caption(
+    "Not recommended on this file: telephony, more agents, AI voice, WhatsApp/digital, or field. "
+    "Those options have no identifiable lift and/or missing cost and treatment flags."
+)
+
+st.caption("Source: golden metrics from `python scripts/run_pipeline.py` · SUCCESS unique payment_id · IST months · 30,000-account book.")
