@@ -1,0 +1,40 @@
+flowchart TB
+  subgraph sources [Source systems]
+    CORE[Core loan book]
+    DIAL[Telephony vendors]
+    DIGI[WhatsApp / SMS]
+    FIELD[Field app]
+    PAY[Payment gateway]
+    WFM[Agent sessions]
+  end
+
+  subgraph raw [Raw]
+    R[(Object store / files)]
+  end
+
+  subgraph warehouse [Warehouse]
+    STG[staging]
+    CLN[clean]
+    GLD[golden]
+    FEAT[feature / account-month]
+    MET[metrics]
+  end
+
+  DQ[Data-quality tests]
+  MON[Anomaly monitors]
+  DASH[CEO dashboard]
+  MEMO[Monthly memo]
+
+  sources --> R
+  R --> STG
+  STG --> CLN
+  CLN --> GLD
+  GLD --> FEAT
+  FEAT --> MET
+  CLN --> DQ
+  GLD --> DQ
+  MET --> DQ
+  MET --> DASH
+  MET --> MEMO
+  MET --> MON
+  DQ --> MON

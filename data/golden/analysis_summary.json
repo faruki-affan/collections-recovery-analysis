@@ -1,0 +1,39 @@
+{
+  "monthly_rows": 8,
+  "claim": {
+    "reported_claim": "Recovery has improved by 11% month-on-month.",
+    "likely_compared_months": [
+      "2026-02",
+      "2026-03"
+    ],
+    "total_rupees_mom_feb_mar": 0.11031885249801654,
+    "per_day_mom_feb_mar": 0.0028686409659504086,
+    "per_account_mom_feb_mar": 0.11031885249801654,
+    "paying_accounts_mom_feb_mar": 0.1132075471698113,
+    "verdict": "True only under a specific definition: total SUCCESS rupees, February to March, without calendar-day adjustment. Operationally the improvement is not real.",
+    "notes": [],
+    "feb_days": 28,
+    "mar_days": 31,
+    "calendar_ratio": 0.1071428571428572
+  },
+  "counterfactual": {
+    "method": "difference-in-differences on account-month recovery among targeted accounts",
+    "treatment": "account-month has any v2/v3 campaign targeting",
+    "control": "account-month targeted only by legacy/v1 (or no v2/v3)",
+    "post_start": "2026-04",
+    "did_recovery_amount_per_account_month": 95.17353655902843,
+    "cell_means": {
+      "0": {
+        "0": 6373.96697877653,
+        "1": 6144.3175818905
+      },
+      "1": {
+        "0": 5854.916017382413,
+        "1": 5720.440157055412
+      }
+    },
+    "n": 40710,
+    "identification_warning": "Strategy mix is stable across months; this is not a clean mid-year switch. DiD is a robustness check, not a causal claim."
+  },
+  "success_amount": 1315583964.6399999
+}

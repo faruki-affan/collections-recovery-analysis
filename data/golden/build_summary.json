@@ -1,0 +1,9 @@
+{
+  "window_start": "2026-01-01",
+  "window_end": "2026-08-08",
+  "n_accounts": 30000,
+  "n_payments_clean": 25000,
+  "success_amount_clean": 1315583964.6399999,
+  "n_interactions": 220000,
+  "account_month_rows": 240000
+}

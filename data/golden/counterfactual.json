@@ -1,0 +1,19 @@
+{
+  "method": "difference-in-differences on account-month recovery among targeted accounts",
+  "treatment": "account-month has any v2/v3 campaign targeting",
+  "control": "account-month targeted only by legacy/v1 (or no v2/v3)",
+  "post_start": "2026-04",
+  "did_recovery_amount_per_account_month": 95.17353655902843,
+  "cell_means": {
+    "0": {
+      "0": 6373.96697877653,
+      "1": 6144.3175818905
+    },
+    "1": {
+      "0": 5854.916017382413,
+      "1": 5720.440157055412
+    }
+  },
+  "n": 40710,
+  "identification_warning": "Strategy mix is stable across months; this is not a clean mid-year switch. DiD is a robustness check, not a causal claim."
+}

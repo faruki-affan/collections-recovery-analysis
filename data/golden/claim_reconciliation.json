@@ -1,0 +1,16 @@
+{
+  "reported_claim": "Recovery has improved by 11% month-on-month.",
+  "likely_compared_months": [
+    "2026-02",
+    "2026-03"
+  ],
+  "total_rupees_mom_feb_mar": 0.11031885249801654,
+  "per_day_mom_feb_mar": 0.0028686409659504086,
+  "per_account_mom_feb_mar": 0.11031885249801654,
+  "paying_accounts_mom_feb_mar": 0.1132075471698113,
+  "verdict": "True only under a specific definition: total SUCCESS rupees, February to March, without calendar-day adjustment. Operationally the improvement is not real.",
+  "notes": [],
+  "feb_days": 28,
+  "mar_days": 31,
+  "calendar_ratio": 0.1071428571428572
+}

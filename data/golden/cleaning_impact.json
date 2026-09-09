@@ -1,0 +1,112 @@
+[
+  {
+    "rule": "payments_exact_row_dedupe",
+    "records_before": 25500,
+    "rejected": 486,
+    "corrected": 0,
+    "retained": 25014,
+    "amount_before": 1917258617.15,
+    "amount_after": 1879959597.35,
+    "notes": "Exact row duplicates retained once (first occurrence).",
+    "amount_impact": -37299019.80000019
+  },
+  {
+    "rule": "payments_dedupe_payment_id",
+    "records_before": 25014,
+    "rejected": 14,
+    "corrected": 0,
+    "retained": 25000,
+    "amount_before": 1879959597.35,
+    "amount_after": 1878892272.89,
+    "notes": "Keep first row per payment_id. Do not treat other columns as a natural key unless proven.",
+    "amount_impact": -1067324.4599997997
+  },
+  {
+    "rule": "payment_reference_NOT_used_as_key",
+    "records_before": 25500,
+    "rejected": 0,
+    "corrected": 0,
+    "retained": 25000,
+    "amount_before": null,
+    "amount_after": null,
+    "amount_impact": null,
+    "notes": "3406 payment_references map to multiple accounts. Treating reference as a transaction key would mix unrelated payments."
+  },
+  {
+    "rule": "calls_exact_row_dedupe",
+    "records_before": 91350,
+    "rejected": 1271,
+    "corrected": 0,
+    "retained": 90079,
+    "amount_before": null,
+    "amount_after": null,
+    "notes": "Exact row duplicates retained once (first occurrence).",
+    "amount_impact": null
+  },
+  {
+    "rule": "calls_dedupe_call_id",
+    "records_before": 90079,
+    "rejected": 79,
+    "corrected": 0,
+    "retained": 90000,
+    "amount_before": null,
+    "amount_after": null,
+    "notes": "Keep first row per call_id. Do not treat other columns as a natural key unless proven.",
+    "amount_impact": null
+  },
+  {
+    "rule": "map_disposition_codes",
+    "records_before": 35000,
+    "rejected": 0,
+    "corrected": 3926,
+    "retained": 35000,
+    "amount_before": null,
+    "amount_after": null,
+    "notes": "PTP and PROMISE_TO_PAY mapped to PTP. Unmapped codes flagged, not dropped.",
+    "amount_impact": null
+  },
+  {
+    "rule": "whatsapp_exact_row_dedupe",
+    "records_before": 60600,
+    "rejected": 600,
+    "corrected": 0,
+    "retained": 60000,
+    "amount_before": null,
+    "amount_after": null,
+    "notes": "Exact row duplicates retained once (first occurrence).",
+    "amount_impact": null
+  },
+  {
+    "rule": "whatsapp_dedupe_id",
+    "records_before": 60000,
+    "rejected": 0,
+    "corrected": 0,
+    "retained": 60000,
+    "amount_before": null,
+    "amount_after": null,
+    "notes": "Keep first row per whatsapp_event_id. Do not treat other columns as a natural key unless proven.",
+    "amount_impact": null
+  },
+  {
+    "rule": "resolve_agent_identity",
+    "records_before": 30000,
+    "rejected": 29000,
+    "corrected": 0,
+    "retained": 1000,
+    "amount_before": null,
+    "amount_after": null,
+    "notes": "Collapsed snapshots to 1 row per agent_id. Names/employee codes are not unique humans.",
+    "amount_impact": null
+  },
+  {
+    "rule": "resolve_borrower_identity",
+    "records_before": 30600,
+    "rejected": 19585,
+    "corrected": 8517,
+    "retained": 11015,
+    "amount_before": null,
+    "amount_after": null,
+    "notes": "Borrower PII conflicts are common. city/state mode is LOW-confidence geography only.",
+    "amount_impact": null
+  }
+]
